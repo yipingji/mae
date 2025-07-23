@@ -1,0 +1,5 @@
+pretrain*
+optimizers*
+*.sh
+wandb/
+output*
