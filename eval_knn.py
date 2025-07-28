@@ -284,7 +284,7 @@ def extract_feature_pipeline(args):
 def extract_features(model, data_loader, use_cuda=True, multiscale=False):
     metric_logger = MetricLogger(delimiter="  ")
     features = None
-    for samples, index in metric_logger.log_every(data_loader, 10):
+    for samples, index in metric_logger.log_every(data_loader, 50):
         samples = samples.cuda(non_blocking=True)
         index = index.cuda(non_blocking=True)
         if multiscale:

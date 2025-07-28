@@ -27,13 +27,18 @@ def parse_args():
     parser.add_argument("--partition", default="learnfair", type=str, help="Partition where to submit")
     parser.add_argument("--use_volta32", action='store_true', help="Request 32G V100 GPUs")
     parser.add_argument('--comment', default="", type=str, help="Comment to pass to scheduler")
+    
+    parser.add_argument('--skipless', action='store_true',help='if use skipless training')
+    parser.add_argument('--mimetic', default=None, type=float, nargs=2, help='mimetic init')
+    parser.add_argument('--W_v', default=1.0, type=float, help='coefficient for Value')
+    parser.add_argument('--W_p', default=1.0, type=float, help='coefficient for Projection')
+        
     return parser.parse_args()
 
 
 def get_shared_folder() -> Path:
-    user = os.getenv("USER")
-    if Path("/checkpoint/").is_dir():
-        p = Path(f"/checkpoint/{user}/experiments")
+    if Path("/scratch3/ji016/project/2025/dino/output").is_dir():
+        p = Path(f"/scratch3/ji016/project/2025/dino/output")
         p.mkdir(exist_ok=True)
         return p
     raise RuntimeError("No shared folder available")
@@ -85,9 +90,12 @@ class Trainer(object):
 
 def main():
     args = parse_args()
-    if args.job_dir == "":
-        args.job_dir = get_shared_folder() / "%j"
+    if args.mimetic is not None:
+        args.output_dir =  f"output/dino_{args.arch}_ep{args.epochs}_bs{args.batch_size_per_gpu}_opt{args.optimizer}_lr{args.lr}_skipless{args.skipless}_svdortho_mimetic{args.mimetic[0]}_{args.mimetic[1]}_Wv{args.W_v}_Wp{args.W_p}"
+    else:
+        args.output_dir =  f"output/dino_{args.arch}_ep{args.epochs}_bs{args.batch_size_per_gpu}_opt{args.optimizer}_lr{args.lr}_skipless{args.skipless}"
 
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     # Note that the folder will depend on the job_id, to easily track experiments
     executor = submitit.AutoExecutor(folder=args.job_dir, slurm_max_num_timeout=30)
 
@@ -102,18 +110,24 @@ def main():
     if args.comment:
         kwargs['slurm_comment'] = args.comment
 
+    if args.timeout <=120:
+        args.partition = 'h2gpu'
+    elif args.timeout <= 1440:
+        args.partition = 'h24gpu'
+    kwargs['slurm_account'] = 'OD-236362'
+
     executor.update_parameters(
-        mem_gb=40 * num_gpus_per_node,
-        gpus_per_node=num_gpus_per_node,
-        tasks_per_node=num_gpus_per_node,  # one task per GPU
-        cpus_per_task=10,
-        nodes=nodes,
-        timeout_min=timeout_min,  # max is 60 * 72
-        # Below are cluster dependent parameters
-        slurm_partition=partition,
+        mem_gb = 40* args.ngpus,  
+        nodes=args.nodes,
+        gpus_per_node=args.ngpus,
+        tasks_per_node=args.ngpus,
+        timeout_min=args.timeout,  # max is 60 * 72
         slurm_signal_delay_s=120,
-        **kwargs
+        slurm_partition=args.partition,
+        cpus_per_task=16,
+        **kwargs,
     )
+
 
     executor.update_parameters(name="mae")
 
